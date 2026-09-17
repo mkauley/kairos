@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kairos — sandbox</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 0; padding: 2rem 1rem;
+      display: flex; justify-content: center;
+      background: Canvas; color: CanvasText;
+    }
+    main { width: 100%; max-width: 32rem; }
+    h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+    p.sub { margin: 0 0 1.5rem; opacity: .7; font-size: .9rem; }
+    form { display: flex; gap: .5rem; }
+    input[type=text] {
+      flex: 1; padding: .6rem .7rem; font: inherit;
+      border: 1px solid GrayText; border-radius: .4rem;
+      background: Field; color: FieldText;
+    }
+    button {
+      padding: .6rem .9rem; font: inherit; cursor: pointer;
+      border: 1px solid transparent; border-radius: .4rem;
+      background: Highlight; color: HighlightText;
+    }
+    button.secondary { background: transparent; color: inherit; border-color: GrayText; }
+    button:disabled { opacity: .5; cursor: default; }
+    .card {
+      margin-top: 1.25rem; padding: 1rem; border: 1px solid GrayText;
+      border-radius: .5rem; display: none;
+    }
+    .card.show { display: block; }
+    .card h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
+    .when { opacity: .8; font-size: .95rem; }
+    .flags { margin: .6rem 0 1rem; font-size: .8rem; opacity: .7; }
+    .flag.miss { text-decoration: line-through; }
+    .row { display: flex; gap: .5rem; }
+    .msg { margin-top: 1rem; font-size: .9rem; white-space: pre-wrap; }
+    .msg.err { color: #c0392b; }
+    .msg.ok { color: #1e8449; }
+    .msg a { color: inherit; }
+    .examples { margin-top: 2rem; font-size: .85rem; opacity: .7; }
+    .examples code {
+      display: inline-block; margin: .15rem .3rem .15rem 0; padding: .1rem .35rem;
+      border: 1px solid GrayText; border-radius: .3rem; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Kairos</h1>
+  <p class="sub">Type a loose event. Preview it. Send it to Google Calendar.</p>
+
+  <form id="f">
+    <input type="text" id="text" name="text" autocomplete="off" autofocus
+           placeholder="5/23/25 - 6pm - Doctor's Appt">
+    <button type="submit">Preview</button>
+  </form>
+
+  <div class="card" id="card">
+    <h2 id="title"></h2>
+    <div class="when" id="when"></div>
+    <div class="flags" id="flags"></div>
+    <div class="row">
+      <button id="confirm">Add to calendar</button>
+      <button class="secondary" id="edit" type="button">Edit</button>
+    </div>
+  </div>
+
+  <div class="msg" id="msg"></div>
+
+  <div class="examples">
+    Try:
+    <code>tomorrow 3pm standup</code>
+    <code>May 23 6pm Doctor's Appt</code>
+    <code>lunch w/ Sarah 5/30 noon</code>
+    <code>8am gym</code>
+    <code>12/25 family dinner</code>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let current = null;
+
+async function post(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { ok: res.ok, data: await res.json() };
+}
+
+function showPreview(d) {
+  current = d;
+  $("title").textContent = d.title;
+  $("when").textContent = d.start_pretty + "  –  " + d.end_pretty;
+  $("flags").innerHTML =
+    `<span class="flag ${d.matched.date ? "" : "miss"}">date` +
+    (d.matched.date_text ? ` “${d.matched.date_text}”` : " (assumed)") + `</span> &nbsp; ` +
+    `<span class="flag ${d.matched.time ? "" : "miss"}">time` +
+    (d.matched.time_text ? ` “${d.matched.time_text}”` : " (default 9am)") + `</span>`;
+  $("card").classList.add("show");
+  $("msg").textContent = "";
+  $("msg").className = "msg";
+}
+
+function setMsg(text, cls) {
+  $("msg").className = "msg " + (cls || "");
+  $("msg").textContent = text;
+}
+
+$("f").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("text").value.trim();
+  if (!text) return;
+  const { ok, data } = await post("/parse", { text });
+  if (!ok) { setMsg(data.error || "parse failed", "err"); return; }
+  showPreview(data);
+});
+
+$("confirm").addEventListener("click", async () => {
+  if (!current) return;
+  $("confirm").disabled = true;
+  setMsg("Creating…");
+  const { ok, data } = await post("/create", {
+    title: current.title, start: current.start, end: current.end,
+  });
+  $("confirm").disabled = false;
+  if (!ok || data.error) { setMsg(data.error || "create failed", "err"); return; }
+  const link = data.event.htmlLink;
+  $("msg").className = "msg ok";
+  $("msg").innerHTML = `Added: <strong>${data.event.summary}</strong>` +
+    (link ? ` — <a href="${link}" target="_blank" rel="noopener">open in Calendar</a>` : "");
+  $("card").classList.remove("show");
+  $("text").value = "";
+  $("text").focus();
+});
+
+$("edit").addEventListener("click", () => {
+  $("card").classList.remove("show");
+  $("text").focus();
+});
+
+document.querySelectorAll(".examples code").forEach((el) => {
+  el.addEventListener("click", () => {
+    $("text").value = el.textContent;
+    $("f").requestSubmit();
+  });
+});
+</script>
+</body>
+</html>

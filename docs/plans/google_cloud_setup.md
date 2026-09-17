@@ -55,11 +55,12 @@ Overview, Branding, Audience, Clients, Data Access.
 - Application type: **Desktop app**
 - Name: `kairos-desktop` → **Create**
 - Click **Download JSON**
-- Save that file as `credentials.json` in the project root:
-  `/home/mkeph/code/mkalendar/credentials.json`
+- Save that file as `creds/credentials.json` in the project:
+  `~/code/kairos/creds/credentials.json`
 
 ### 5. Next
-- Confirm `credentials.json` is in the project root.
-- `.gitignore` must exclude it (and `token.json`, generated on first auth).
+- `credentials.json` lives in `creds/`. `token.json` (generated on first
+  auth) will land there too.
+- `.gitignore` excludes the whole `creds/` directory.
 - Then build the Flask app and run the first real `/create` against the
   calendar.
